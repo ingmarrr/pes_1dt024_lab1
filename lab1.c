@@ -4,12 +4,9 @@
 
 static int brightness = 0;  // Current brightness level (duty cycle)
 static int fade_direction = 1;  // 1 = increasing brightness, -1 = decreasing
-/* !!! PART 2 & 3 !!! */
 
-/* !!! MIGHT WANT TO CHANGE THIS !!! */
 #define BUTTON_DEBOUNCE_DELAY   50
 #define EVENT_QUEUE_LENGTH      10 
-
 
 typedef enum _event_t 
 {
@@ -30,6 +27,8 @@ const static uint B3 = 22;
 
 queue_t evt_queue;
 
+static uint leds_map[4] = {0,0,0,0};    //Storing on/off state of each LED
+
 /* Function pointer primitive */ 
 typedef void (*state_func_t)( void );
 
@@ -42,9 +41,6 @@ typedef struct _state_t
     uint32_t delay_ms;
 } state_t;
 
-
-/* !!! PART 2 & 3 !!! */
-/* Define event queue */
 
 unsigned long button_time = 0;
 
@@ -80,7 +76,6 @@ void button_isr(uint gpio, uint32_t events)
 void private_init() 
 {
 
-    /* !!! PART 2 !!! */
     /* Button setup */
     gpio_init(B1); 
     gpio_init(B2);
@@ -89,7 +84,6 @@ void private_init()
     gpio_set_dir(B2, GPIO_IN); 
     gpio_set_dir(B2, GPIO_IN);
 
-    /* !!! PART 1 !!! */
     /* LED setup */
     gpio_init(GP0); 
     gpio_init(GP1); 
@@ -100,12 +94,11 @@ void private_init()
     gpio_set_dir(GP2, GPIO_OUT);
     gpio_set_dir(GP3, GPIO_OUT);
 
+    /* Button ISR setup */
+
     gpio_set_irq_enabled_with_callback(B1, GPIO_IRQ_EDGE_FALL, true, &button_isr); 
     gpio_set_irq_enabled_with_callback(B2, GPIO_IRQ_EDGE_FALL, true, &button_isr); 
-    gpio_set_irq_enabled_with_callback(B3, GPIO_IRQ_EDGE_FALL, true, &button_isr); 
-
-    
-   
+    gpio_set_irq_enabled_with_callback(B3, GPIO_IRQ_EDGE_FALL, true, &button_isr);     
 
     /* Event queue setup */
     queue_init(&evt_queue, sizeof(event_t), EVENT_QUEUE_LENGTH); 
@@ -114,7 +107,6 @@ void private_init()
 /* The next three methods are for convenience, you might want to use them. */
 event_t get_event(void)
 {
-    /* !!!! PART 2 !!!! */
     event_t evt = no_evt; 
     if (queue_try_remove(&evt_queue, &evt))
     { 
@@ -149,42 +141,47 @@ void on_pwm_wrap() {
 
 void leds_off () 
 {
-    /* !!! PART 1 !!! */
-    gpio_put(GP0, 0);
-    gpio_put(GP1, 0);
-    gpio_put(GP2, 0);
-    gpio_put(GP3, 0);
-
+    for (uint i=0; i<4; i++) gpio_put(i, 0);
 }
 
 void leds_on () 
 {
-    /* !!! PART 2 !!! */
-    gpio_put(GP0, 1);
-    gpio_put(GP1, 1);
-    gpio_put(GP2, 1);
-    gpio_put(GP3, 1);
+    for (uint i=0; i<4; i++) gpio_put(i, 1);
 }
+
+static uint state_0_led = 0;
 
 void do_state_0(void)
 {
-
-    /* !!! PART 1 !!! */
-    gpio_put(GP0, 1);
-    
-
+    leds_off();
+    leds_map[state_0_led] = 1;
+    state_0_led = (state_0_led + 1)%4;
 }
 
+static bool state_one = 0;
 
 void do_state_1(void) {
-    gpio_put(GP1, 1);
+    
+    for (uint i = 0; i<4 ;i++)
+    {
+        if (state_one == 0)
+            leds_map[i] = 0;
+        else 
+            leds_map[i] = 1;
+    }
+    state_one = !state_one;
 
 }
 
+static uint state_2_led = 3;
 
 void do_state_2(void) {
     
-    gpio_put(GP2, 1);
+    leds_off();
+    leds_map[state_2_led] = 1;
+    if (state_2_led == 0)
+        state_2_led = 3;
+    else state_2_led = state_2_led-1;
 }
 
 
@@ -207,7 +204,7 @@ void enter_state_3(void) {
 }
 
 void do_state_3(void) {
-
+    return;
 }
 
 void exit_state_3(void) {
@@ -221,13 +218,12 @@ void exit_state_3(void) {
 }
 
 
-/* !!! PART 1 !!! */
 const state_t state0 = {
     0, 
     leds_off,
     do_state_0,
     leds_off, 
-    500
+    200
 };
 
 const state_t state1 = {
@@ -243,7 +239,7 @@ const state_t state2 = {
     leds_off,
     do_state_2,
     leds_off, 
-    500
+    100
 };
 
 const state_t state3 = {
@@ -251,12 +247,12 @@ const state_t state3 = {
     enter_state_3,
     do_state_3,
     exit_state_3,
-    1000
+    500
 };
 
 /* !!! PART 2 !!! */
  state_t state_table[4][4] = {
-    /*  STATE       B1              B2      B3      NO-EVT   */
+    /*  STATE       B1           B2      B3      NO-EVT   */
     {/* S0 */      state2,    state1,  state3,   state0},
     {/* S1 */   state0,   state2,  state3,  state1},    
     {/* S2 */    state1,    state0,  state3,  state2},
@@ -273,11 +269,14 @@ int main()
 
     for(;;) 
     {
+
         current_state.Enter(); 
 
         while (1)  
         {
             current_state.Do();
+            for (uint i=0; i<4; i++) gpio_put(i, leds_map[i]);
+
             sleep_ms(current_state.delay_ms);
             evt = get_event();
 
