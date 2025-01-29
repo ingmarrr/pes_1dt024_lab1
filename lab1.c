@@ -170,8 +170,6 @@ void do_state_0(void)
 {
 
     /* !!! PART 1 !!! */
-    uint slice_num = pwm_gpio_to_slice_num(GP0);
-    pwm_set_irq_enabled(slice_num, true);
     gpio_put(GP0, 1);
     
 
@@ -190,7 +188,7 @@ void do_state_2(void) {
 }
 
 
-void do_state_3(void) {
+void enter_state_3(void) {
     gpio_set_function(GP0, GPIO_FUNC_PWM);
     uint slice_num = pwm_gpio_to_slice_num(GP0);
     pwm_clear_irq(slice_num);
@@ -198,7 +196,7 @@ void do_state_3(void) {
     irq_set_exclusive_handler(PWM_DEFAULT_IRQ_NUM(), on_pwm_wrap);
     irq_set_enabled(PWM_DEFAULT_IRQ_NUM(), true);
 
-    // Get some sensible defaults for the slice configuration. By default, the
+    // By default, the
     // counter is allowed to wrap over its maximum range (0 to 2**16-1)
     pwm_config config = pwm_get_default_config();
     // Set divider, reduces counter clock to sysclock/this value
@@ -206,6 +204,20 @@ void do_state_3(void) {
     // Load the configuration into our PWM slice, and set it running.
     pwm_init(slice_num, &config, true);
 
+}
+
+void do_state_3(void) {
+
+}
+
+void exit_state_3(void) {
+    // Disable pwm functionality and interrupt, reconfig to GPIO functionality
+    gpio_set_function(GP0, GPIO_FUNC_GPCK);
+    gpio_init(GP0);
+    gpio_set_dir(GP0, GPIO_OUT);
+    uint slice_num = pwm_gpio_to_slice_num(GP0);
+    pwm_set_irq_enabled(slice_num, false);
+    irq_set_enabled(PWM_DEFAULT_IRQ_NUM(), false);
 }
 
 
@@ -236,9 +248,9 @@ const state_t state2 = {
 
 const state_t state3 = {
     3, 
-    leds_off,
+    enter_state_3,
     do_state_3,
-    leds_off, 
+    exit_state_3,
     1000
 };
 
@@ -266,6 +278,7 @@ int main()
         while (1)  
         {
             current_state.Do();
+            sleep_ms(current_state.delay_ms);
             evt = get_event();
 
             if (evt != no_evt && current_state.id != state_table[current_state.id][evt].id) {
