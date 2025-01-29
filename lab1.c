@@ -141,11 +141,17 @@ void on_pwm_wrap() {
 
 void leds_off () 
 {
+    for (uint i=0; i<4; i++){
+        leds_map[i] = 0;
+    }
     for (uint i=0; i<4; i++) gpio_put(i, 0);
 }
 
 void leds_on () 
 {
+    for (uint i=0; i<4; i++){
+        leds_map[i] = 1;
+    }
     for (uint i=0; i<4; i++) gpio_put(i, 1);
 }
 
