@@ -104,6 +104,9 @@ void private_init()
     gpio_set_irq_enabled_with_callback(B2, GPIO_IRQ_EDGE_FALL, true, &button_isr); 
     gpio_set_irq_enabled_with_callback(B3, GPIO_IRQ_EDGE_FALL, true, &button_isr); 
 
+    
+   
+
     /* Event queue setup */
     queue_init(&evt_queue, sizeof(event_t), EVENT_QUEUE_LENGTH); 
 }
@@ -118,6 +121,30 @@ event_t get_event(void)
         return evt; 
     }
     return no_evt; 
+}
+
+void on_pwm_wrap() {
+    static int fade = 0;
+    static bool going_up = true;
+    // Clear the interrupt flag that brought us here
+    pwm_clear_irq(pwm_gpio_to_slice_num(GP0));
+
+    if (going_up) {
+        ++fade;
+        if (fade > 255) {
+            fade = 255;
+            going_up = false;
+        }
+    } else {
+        --fade;
+        if (fade < 0) {
+            fade = 0;
+            going_up = true;
+        }
+    }
+    // Square the fade value to make the LED's brightness appear more linear
+    // Note this range matches with the wrap value
+    pwm_set_gpio_level(GP0, fade * fade);
 }
 
 void leds_off () 
@@ -143,7 +170,10 @@ void do_state_0(void)
 {
 
     /* !!! PART 1 !!! */
+    uint slice_num = pwm_gpio_to_slice_num(GP0);
+    pwm_set_irq_enabled(slice_num, true);
     gpio_put(GP0, 1);
+    
 
 }
 
@@ -161,13 +191,20 @@ void do_state_2(void) {
 
 
 void do_state_3(void) {
-    gpio_set_function(0, GPIO_FUNC_PWM);
+    gpio_set_function(GP0, GPIO_FUNC_PWM);
+    uint slice_num = pwm_gpio_to_slice_num(GP0);
+    pwm_clear_irq(slice_num);
+    pwm_set_irq_enabled(slice_num, true);
+    irq_set_exclusive_handler(PWM_DEFAULT_IRQ_NUM(), on_pwm_wrap);
+    irq_set_enabled(PWM_DEFAULT_IRQ_NUM(), true);
 
-    uint slice_num = pwm_gpio_to_slice_num(0);
-
-
-    pwm_set_chan_level(slice_num, PWM_CHAN_A, 200);
-    pwm_set_enabled(slice_num, true);
+    // Get some sensible defaults for the slice configuration. By default, the
+    // counter is allowed to wrap over its maximum range (0 to 2**16-1)
+    pwm_config config = pwm_get_default_config();
+    // Set divider, reduces counter clock to sysclock/this value
+    pwm_config_set_clkdiv(&config, 4.f);
+    // Load the configuration into our PWM slice, and set it running.
+    pwm_init(slice_num, &config, true);
 
 }
 
@@ -202,7 +239,7 @@ const state_t state3 = {
     leds_off,
     do_state_3,
     leds_off, 
-    2000
+    1000
 };
 
 /* !!! PART 2 !!! */
